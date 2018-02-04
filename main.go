@@ -19,12 +19,30 @@ var upgrader = websocket.Upgrader{
 type outlet struct {
 	id       string
 	commands chan string
-	state    chan string
+}
+
+func (o outlet) CommandTopic() string {
+	return "/voltson/" + o.id
+}
+
+func (o outlet) AvailableTopic() string {
+	return o.CommandTopic() + "/available"
+}
+
+func (o outlet) StateTopic() string {
+	return o.CommandTopic() + "/state"
 }
 
 var subscribes = make(chan outlet)
 
-func echo(w http.ResponseWriter, r *http.Request) {
+type message struct {
+	topic    string
+	contents string
+}
+
+var messages = make(chan message)
+
+func websocketRequest(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
@@ -34,35 +52,34 @@ func echo(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Client connected")
 	mqtt := make(chan string)
-	state := make(chan string, 1)
 	offline := make(chan bool)
 	device := make(chan map[string]interface{})
 
-	state <- "On"
-
 	go func() {
 		for {
-			var message map[string]interface{}
+			var m map[string]interface{}
 			c.SetReadDeadline(time.Now().Add(10 * time.Second))
-			err := c.ReadJSON(&message)
+			err := c.ReadJSON(&m)
 			if err != nil {
 				log.Println("read error:", err)
 				offline <- true
 				break
 			}
-			device <- message
+			device <- m
 		}
 	}()
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
+	o := outlet{"", mqtt}
+
 outer:
 	for {
 		select {
 		case <-offline:
 			log.Println("offline")
-			state <- "Off"
+			messages <- message{o.AvailableTopic(), "offline"}
 			break outer
 		case <-ticker.C:
 			log.Println("ping")
@@ -70,10 +87,12 @@ outer:
 			if err != nil {
 				log.Println("ping err:", err)
 			}
-		case message := <-device:
-			log.Printf("recv: %s", message)
-			if message["id"] != nil {
-				subscribes <- outlet{"/voltson/" + string(message["id"].(string)), mqtt, state}
+		case m := <-device:
+			log.Printf("recv: %s", m)
+			if m["id"] != nil {
+				o.id = string(m["id"].(string))
+				subscribes <- o
+				messages <- message{o.AvailableTopic(), "online"}
 			}
 		case command := <-mqtt:
 			log.Printf("command: %s", command)
@@ -88,7 +107,7 @@ outer:
 	}
 }
 
-func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, subscribes chan outlet) {
+func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, subscribes chan outlet, messages chan message) {
 	log.Print("Connecting to mqtt broker")
 
 	opts := MQTT.NewClientOptions()
@@ -103,36 +122,32 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	go func() {
-		for {
-			outlet := <-subscribes
-			log.Printf("Connecting to mqtt topic: %s", outlet.id)
-			if token := c.Subscribe(outlet.id, 0, func(client MQTT.Client, msg MQTT.Message) {
+	for {
+		select {
+		case o := <-subscribes:
+			log.Printf("Subscribing to mqtt topic: %s", o.CommandTopic())
+			if token := c.Subscribe(o.CommandTopic(), 0, func(client MQTT.Client, msg MQTT.Message) {
 				log.Printf("Received mqtt msg: %s", msg.Payload())
-				outlet.commands <- string(msg.Payload())
+				o.commands <- string(msg.Payload())
 			}); token.Wait() && token.Error() != nil {
 				fmt.Println(token.Error())
 			}
-
-			go func() {
-				for {
-					state := <-outlet.state
-					log.Print(state)
-					//stateToken := c.Publish(outlet.id+"/state", 0, true, state)
-					//if stateToken.Wait() && stateToken.Error() != nil {
-					//	log.Printf("Error publishing state for %s", outlet.id)
-					//}
-				}
-			}()
-
-			log.Printf("Connected to mqtt topic: %s", outlet.id)
+			log.Printf("Subscribed to mqtt topic: %s", o.CommandTopic())
+		case m := <-messages:
+			log.Print(m.contents)
+			token := c.Publish(m.topic, 0, true, m.contents)
+			if token.Wait() && token.Error() != nil {
+				log.Printf("Error publishing %s on %s", m.contents, m.topic)
+			}
+		default:
+			time.Sleep(100 * time.Millisecond)
 		}
-	}()
+	}
 }
 
 func startWebsocket() {
 	log.Print("Starting websocket")
-	http.HandleFunc("/gnws", echo)
+	http.HandleFunc("/gnws", websocketRequest)
 	log.Fatal(http.ListenAndServe("0.0.0.0:17273", nil))
 }
 
@@ -142,6 +157,6 @@ func main() {
 	mqttPasswordPtr := flag.String("mqtt-password", "", "The MQTT broker password")
 	flag.Parse()
 
-	connectMqtt(mqttPtr, mqttUserPtr, mqttPasswordPtr, subscribes)
+	go connectMqtt(mqttPtr, mqttUserPtr, mqttPasswordPtr, subscribes, messages)
 	startWebsocket()
 }
