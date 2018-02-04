@@ -34,6 +34,7 @@ func (o outlet) StateTopic() string {
 }
 
 var subscribes = make(chan outlet)
+var unsubscribes = make(chan outlet)
 
 type message struct {
 	topic    string
@@ -80,6 +81,7 @@ outer:
 		case <-offline:
 			log.Println("offline")
 			messages <- message{o.AvailableTopic(), "offline"}
+			unsubscribes <- o
 			break outer
 		case <-ticker.C:
 			log.Println("ping")
@@ -107,7 +109,7 @@ outer:
 	}
 }
 
-func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, subscribes chan outlet, messages chan message) {
+func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, unsubscribes chan outlet, subscribes chan outlet, messages chan message) {
 	log.Print("Connecting to mqtt broker")
 
 	opts := MQTT.NewClientOptions()
@@ -133,8 +135,13 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 				fmt.Println(token.Error())
 			}
 			log.Printf("Subscribed to mqtt topic: %s", o.CommandTopic())
+		case o := <-unsubscribes:
+			log.Printf("Unsubscribing to mqtt topic: %s", o.CommandTopic())
+			if token := c.Unsubscribe(o.CommandTopic()); token.Wait() && token.Error() != nil {
+				fmt.Println(token.Error())
+			}
+			log.Printf("Unsubscribed to mqtt topic: %s", o.CommandTopic())
 		case m := <-messages:
-			log.Print(m.contents)
 			token := c.Publish(m.topic, 0, true, m.contents)
 			if token.Wait() && token.Error() != nil {
 				log.Printf("Error publishing %s on %s", m.contents, m.topic)
@@ -157,6 +164,6 @@ func main() {
 	mqttPasswordPtr := flag.String("mqtt-password", "", "The MQTT broker password")
 	flag.Parse()
 
-	go connectMqtt(mqttPtr, mqttUserPtr, mqttPasswordPtr, subscribes, messages)
+	go connectMqtt(mqttPtr, mqttUserPtr, mqttPasswordPtr, unsubscribes, subscribes, messages)
 	startWebsocket()
 }
