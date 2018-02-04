@@ -88,12 +88,7 @@ outer:
 	}
 }
 
-func main() {
-	mqttPtr := flag.String("mqtt-broker", "localhost:1883", "The host and port of the MQTT broker")
-	mqttUserPtr := flag.String("mqtt-user", "", "The MQTT broker user")
-	mqttPasswordPtr := flag.String("mqtt-password", "", "The MQTT broker password")
-	flag.Parse()
-
+func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, subscribes chan outlet) {
 	log.Print("Connecting to mqtt broker")
 	opts := MQTT.NewClientOptions()
 	opts.SetClientID("esp8266-outlet")
@@ -121,18 +116,31 @@ func main() {
 			go func() {
 				for {
 					state := <-outlet.state
-					stateToken := c.Publish(outlet.id+"/state", 0, true, state)
-					if stateToken.Wait() && stateToken.Error() != nil {
-						log.Printf("Error publishing state for %s", outlet.id)
-					}
+					log.Print(state)
+					//stateToken := c.Publish(outlet.id+"/state", 0, true, state)
+					//if stateToken.Wait() && stateToken.Error() != nil {
+					//	log.Printf("Error publishing state for %s", outlet.id)
+					//}
 				}
 			}()
 
 			log.Printf("Connected to mqtt topic: %s", outlet.id)
 		}
 	}()
+}
 
+func startWebsocket() {
 	log.Print("Starting websocket")
 	http.HandleFunc("/gnws", echo)
 	log.Fatal(http.ListenAndServe("0.0.0.0:17273", nil))
+}
+
+func main() {
+	mqttPtr := flag.String("mqtt-broker", "localhost:1883", "The host and port of the MQTT broker")
+	mqttUserPtr := flag.String("mqtt-user", "", "The MQTT broker user")
+	mqttPasswordPtr := flag.String("mqtt-password", "", "The MQTT broker password")
+	flag.Parse()
+
+	connectMqtt(mqttPtr, mqttUserPtr, mqttPasswordPtr, subscribes)
+	startWebsocket()
 }
