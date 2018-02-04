@@ -90,8 +90,9 @@ outer:
 
 func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, subscribes chan outlet) {
 	log.Print("Connecting to mqtt broker")
+
 	opts := MQTT.NewClientOptions()
-	opts.SetClientID("esp8266-outlet")
+	opts.SetClientID("voltlet")
 	opts.AddBroker("tcp://" + *mqttPtr)
 	opts.SetUsername(*mqttUserPtr)
 	opts.SetPassword(*mqttPasswordPtr)
