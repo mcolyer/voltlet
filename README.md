@@ -23,6 +23,7 @@ It lets you control [Etekcity Voltson] smart plugs via your local server rather 
 ### TODO
 
 * [ ] Improve the readme
+* [ ] Finish [hassio integration](https://github.com/mcolyer/hassio-addons/pull/1)
 * [ ] Make a build script
 * [ ] Report energy usage via MQTT
 * [ ] Make it more robust against disconnects from plugs
