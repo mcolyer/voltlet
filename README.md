@@ -29,7 +29,7 @@ It lets you control [Etekcity Voltson] smart plugs via your local server rather 
 
 ### References
 
-* https://github.com/itsnotlupus/vesync-wsproxy
+* [vesync-wsproxy](https://github.com/itsnotlupus/vesync-wsproxy) this project just proxies the connect to the cloud server to spy on what happens. I'd rather keep my data local.
 * This [project](https://github.com/travissinnott/outlet) attempted to do something similar but wasn't fully implemented. That said it has great notes about the line protocol
 
 
