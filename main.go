@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -39,6 +40,11 @@ var unsubscribes = make(chan outlet)
 type message struct {
 	topic    string
 	contents string
+}
+
+type RelayMessage struct {
+	Uri    string `json:"uri"`
+	Action string `json:"action"`
 }
 
 var messages = make(chan message)
@@ -95,10 +101,37 @@ outer:
 				o.id = string(m["id"].(string))
 				subscribes <- o
 				messages <- message{o.AvailableTopic(), "online"}
+				if m["relay"] == "open" {
+					messages <- message{o.StateTopic(), "true"}
+				} else {
+					messages <- message{o.StateTopic(), "false"}
+				}
+			}
+			if m["uri"] == "/runtimeInfo" {
+				if m["relay"] == "open" {
+					messages <- message{o.StateTopic(), "true"}
+				} else {
+					messages <- message{o.StateTopic(), "false"}
+				}
+			}
+			if m["uri"] == "/state" {
+				if m["relay"] == "open" {
+					messages <- message{o.StateTopic(), "true"}
+				} else {
+					messages <- message{o.StateTopic(), "false"}
+				}
 			}
 		case command := <-mqtt:
 			log.Printf("command: %s", command)
-			err = c.WriteMessage(websocket.TextMessage, []byte(command))
+			var err error
+			if command == "true" {
+				msg, _ := json.Marshal(RelayMessage{Uri: "/relay", Action: "open"})
+				err = c.WriteMessage(websocket.TextMessage, []byte(msg))
+			} else {
+				msg, _ := json.Marshal(RelayMessage{Uri: "/relay", Action: "break"})
+				err = c.WriteMessage(websocket.TextMessage, []byte(msg))
+			}
+
 			if err != nil {
 				log.Println("write error:", err)
 				break outer
