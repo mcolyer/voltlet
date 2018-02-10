@@ -49,6 +49,13 @@ type RelayMessage struct {
 
 var messages = make(chan message)
 
+type logWriter struct {
+}
+
+func (writer logWriter) Write(bytes []byte) (int, error) {
+	return fmt.Print(time.Now().UTC().Format("15:04:05.999Z") + " " + string(bytes))
+}
+
 func websocketRequest(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -85,18 +92,18 @@ outer:
 	for {
 		select {
 		case <-offline:
-			log.Println("offline")
+			log.Printf("[%s] offline", o.id)
 			messages <- message{o.AvailableTopic(), "offline"}
 			unsubscribes <- o
 			break outer
 		case <-ticker.C:
-			log.Println("ping")
+			log.Printf("[%s] ping", o.id)
 			err := c.WriteMessage(websocket.TextMessage, []byte("{\"uri\":\"/ka\"}"))
 			if err != nil {
 				log.Println("ping err:", err)
 			}
 		case m := <-device:
-			log.Printf("recv: %s", m)
+			log.Printf("[%s] recv: %s", o.id, m)
 			if m["id"] != nil {
 				o.id = string(m["id"].(string))
 				subscribes <- o
@@ -122,7 +129,7 @@ outer:
 				}
 			}
 		case command := <-mqtt:
-			log.Printf("command: %s", command)
+			log.Printf("[%s] command: %s", o.id, command)
 			var err error
 			if command == "true" {
 				msg, _ := json.Marshal(RelayMessage{Uri: "/relay", Action: "open"})
@@ -192,6 +199,9 @@ func startWebsocket() {
 }
 
 func main() {
+	log.SetFlags(0)
+	log.SetOutput(new(logWriter))
+
 	mqttPtr := flag.String("mqtt-broker", "localhost:1883", "The host and port of the MQTT broker")
 	mqttUserPtr := flag.String("mqtt-user", "", "The MQTT broker user")
 	mqttPasswordPtr := flag.String("mqtt-password", "", "The MQTT broker password")
