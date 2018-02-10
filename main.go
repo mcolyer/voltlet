@@ -65,7 +65,7 @@ func websocketRequest(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		for {
 			var m map[string]interface{}
-			c.SetReadDeadline(time.Now().Add(10 * time.Second))
+			c.SetReadDeadline(time.Now().Add(20 * time.Second))
 			err := c.ReadJSON(&m)
 			if err != nil {
 				log.Println("read error:", err)
