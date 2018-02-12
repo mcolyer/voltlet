@@ -47,6 +47,20 @@ type RelayMessage struct {
 	Action string `json:"action"`
 }
 
+type LoginReplyMessage struct {
+	Uri   string `json:"uri"`
+	Error int    `json:"error"`
+	Wd    int    `json:"wd"`
+	Year  int    `json:"year"`
+	Month int    `json:"month"`
+	Day   int    `json:"day"`
+	Ms    int    `json:"ms"`
+	Hh    int    `json:"hh"`
+	Hl    int    `json:"hl"`
+	Lh    int    `json:"lh"`
+	Ll    int    `json:"ll"`
+}
+
 var messages = make(chan message)
 
 type logWriter struct {
@@ -68,6 +82,7 @@ func websocketRequest(w http.ResponseWriter, r *http.Request) {
 	mqtt := make(chan string)
 	offline := make(chan bool)
 	device := make(chan map[string]interface{})
+	pendingCommand := false
 
 	go func() {
 		for {
@@ -79,6 +94,7 @@ func websocketRequest(w http.ResponseWriter, r *http.Request) {
 				offline <- true
 				break
 			}
+			pendingCommand = false
 			device <- m
 		}
 	}()
@@ -98,9 +114,11 @@ outer:
 			break outer
 		case <-ticker.C:
 			log.Printf("[%s] ping", o.id)
-			err := c.WriteMessage(websocket.TextMessage, []byte("{\"uri\":\"/ka\"}"))
-			if err != nil {
-				log.Println("ping err:", err)
+			if !pendingCommand {
+				err := c.WriteMessage(websocket.TextMessage, []byte("{\"uri\":\"/ka\"}"))
+				if err != nil {
+					log.Println("ping err:", err)
+				}
 			}
 		case m := <-device:
 			log.Printf("[%s] recv: %s", o.id, m)
@@ -108,12 +126,44 @@ outer:
 				o.id = string(m["id"].(string))
 				subscribes <- o
 				messages <- message{o.AvailableTopic(), "online"}
+				now := time.Now()
+				msg, _ := json.Marshal(LoginReplyMessage{
+					Uri:   "/loginReply",
+					Error: 0,
+					Wd:    3, // No idea what this is.
+					Year:  now.Year(),
+					Month: int(now.Month()),
+					Day:   now.Day(),
+					Ms:    (now.Nanosecond() / 1000000),
+					Hh:    0, // No idea what these mean either
+					Hl:    0,
+					Lh:    0,
+					Ll:    0,
+				})
+				log.Printf("[%s] send: %s", o.id, msg)
+				err = c.WriteMessage(websocket.TextMessage, msg)
+
 				if m["relay"] == "open" {
 					messages <- message{o.StateTopic(), "true"}
 				} else {
 					messages <- message{o.StateTopic(), "false"}
 				}
 			}
+			if m["uri"] == "/ka" && m["rssi"] != nil {
+				now := time.Now()
+				msg, _ := json.Marshal(LoginReplyMessage{
+					Uri:   "/kr",
+					Error: 0,
+					Wd:    3, // No idea what this is.
+					Year:  now.Year(),
+					Month: int(now.Month()),
+					Day:   now.Day(),
+					Ms:    (now.Nanosecond() / 1000000),
+				})
+				log.Printf("[%s] send: %s", o.id, msg)
+				err = c.WriteMessage(websocket.TextMessage, msg)
+			}
+
 			if m["uri"] == "/runtimeInfo" {
 				if m["relay"] == "open" {
 					messages <- message{o.StateTopic(), "true"}
@@ -131,13 +181,15 @@ outer:
 		case command := <-mqtt:
 			log.Printf("[%s] command: %s", o.id, command)
 			var err error
+			var msg []byte
 			if command == "true" {
-				msg, _ := json.Marshal(RelayMessage{Uri: "/relay", Action: "open"})
-				err = c.WriteMessage(websocket.TextMessage, []byte(msg))
+				msg, _ = json.Marshal(RelayMessage{Uri: "/relay", Action: "open"})
 			} else {
-				msg, _ := json.Marshal(RelayMessage{Uri: "/relay", Action: "break"})
-				err = c.WriteMessage(websocket.TextMessage, []byte(msg))
+				msg, _ = json.Marshal(RelayMessage{Uri: "/relay", Action: "break"})
 			}
+			pendingCommand = true
+			log.Printf("[%s] send: %s", o.id, msg)
+			err = c.WriteMessage(websocket.TextMessage, msg)
 
 			if err != nil {
 				log.Println("write error:", err)
@@ -169,7 +221,6 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 		case o := <-subscribes:
 			log.Printf("Subscribing to mqtt topic: %s", o.CommandTopic())
 			if token := c.Subscribe(o.CommandTopic(), 0, func(client MQTT.Client, msg MQTT.Message) {
-				log.Printf("Received mqtt msg: %s", msg.Payload())
 				o.commands <- string(msg.Payload())
 			}); token.Wait() && token.Error() != nil {
 				fmt.Println(token.Error())
