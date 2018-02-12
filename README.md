@@ -19,6 +19,17 @@ It lets you control [Etekcity Voltson] smart plugs via your local server rather 
 * Plugs send "true" or "false" to `/voltson/{plug-uuid}/state` once they've actually changed state. Messages are retained.
 * Plugs send "online" or "offline" to `/voltson/{plug-uuid}/availability` depending on whether they are connected. Messages are retained.
 
+#### Home Assistant Example
+
+```
+  - platform: mqtt
+    command_topic: "/voltson/UUID-GOES-HERE"
+    state_topic: "/voltson/UUID-GOES-HERE/state"
+    availability_topic: "/voltson/UUID-GOES-HERE/available"
+    retain: true
+    payload_on: 'true'
+    payload_off: 'false'
+```
 
 ### TODO
 
