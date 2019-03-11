@@ -202,6 +202,8 @@ outer:
 }
 
 func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, unsubscribes chan outlet, subscribes chan outlet, messages chan message) {
+	subscribedOutlets := map[string]outlet{}
+
 	opts := MQTT.NewClientOptions()
 	opts.SetClientID("voltlet")
 	opts.AddBroker("tcp://" + *mqttPtr)
@@ -209,9 +211,11 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	opts.SetPassword(*mqttPasswordPtr)
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
-	opts.SetCleanSession(false)
 	opts.SetOnConnectHandler(func(client MQTT.Client) {
 		log.Print("Connected to mqtt broker")
+		for _, o := range subscribedOutlets {
+			mqttSubscribe(client, o)
+		}
 	})
 	opts.SetConnectionLostHandler(func(client MQTT.Client, reason error) {
 		log.Printf("Connection lost to mqtt broker: %s", reason)
@@ -224,19 +228,11 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	for {
 		select {
 		case o := <-subscribes:
-			log.Printf("Subscribing to mqtt topic: %s", o.CommandTopic())
-			if token := c.Subscribe(o.CommandTopic(), 0, func(client MQTT.Client, msg MQTT.Message) {
-				o.commands <- string(msg.Payload())
-			}); token.Wait() && token.Error() != nil {
-				fmt.Println(token.Error())
-			}
-			log.Printf("Subscribed to mqtt topic: %s", o.CommandTopic())
+			mqttSubscribe(c, o)
+			subscribedOutlets[o.CommandTopic()] = o
 		case o := <-unsubscribes:
-			log.Printf("Unsubscribing to mqtt topic: %s", o.CommandTopic())
-			if token := c.Unsubscribe(o.CommandTopic()); token.Wait() && token.Error() != nil {
-				fmt.Println(token.Error())
-			}
-			log.Printf("Unsubscribed to mqtt topic: %s", o.CommandTopic())
+			mqttUnsubscribe(c, o)
+			delete(subscribedOutlets, o.CommandTopic())
 		case m := <-messages:
 			token := c.Publish(m.topic, 0, true, m.contents)
 			if token.Wait() && token.Error() != nil {
@@ -246,6 +242,24 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+}
+
+func mqttSubscribe(c MQTT.Client, o outlet) {
+	log.Printf("Subscribing to mqtt topic: %s", o.CommandTopic())
+	if token := c.Subscribe(o.CommandTopic(), 0, func(client MQTT.Client, msg MQTT.Message) {
+		o.commands <- string(msg.Payload())
+	}); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
+	}
+	log.Printf("Subscribed to mqtt topic: %s", o.CommandTopic())
+}
+
+func mqttUnsubscribe(c MQTT.Client, o outlet) {
+	log.Printf("Unsubscribing to mqtt topic: %s", o.CommandTopic())
+	if token := c.Unsubscribe(o.CommandTopic()); token.Wait() && token.Error() != nil {
+		fmt.Println(token.Error())
+	}
+	log.Printf("Unsubscribed to mqtt topic: %s", o.CommandTopic())
 }
 
 func startWebsocket() {
