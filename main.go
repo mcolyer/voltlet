@@ -202,8 +202,6 @@ outer:
 }
 
 func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, unsubscribes chan outlet, subscribes chan outlet, messages chan message) {
-	log.Print("Connecting to mqtt broker")
-
 	opts := MQTT.NewClientOptions()
 	opts.SetClientID("voltlet")
 	opts.AddBroker("tcp://" + *mqttPtr)
@@ -212,6 +210,12 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 	opts.SetCleanSession(true)
+	opts.SetOnConnectHandler(func(client) {
+		log.Print("Connected to mqtt broker")
+	})
+	opts.SetConnectionLostHandler(func(client, reason) {
+		log.Printf("Connection lost to mqtt broker: %s", reason)
+	})
 
 	c := MQTT.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
