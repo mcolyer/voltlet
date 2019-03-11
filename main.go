@@ -209,7 +209,7 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	opts.SetPassword(*mqttPasswordPtr)
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
-	opts.SetCleanSession(true)
+	opts.SetCleanSession(false)
 	opts.SetOnConnectHandler(func(client MQTT.Client) {
 		log.Print("Connected to mqtt broker")
 	})
