@@ -210,10 +210,10 @@ func connectMqtt(mqttPtr *string, mqttUserPtr *string, mqttPasswordPtr *string, 
 	opts.SetKeepAlive(2 * time.Second)
 	opts.SetPingTimeout(1 * time.Second)
 	opts.SetCleanSession(true)
-	opts.SetOnConnectHandler(func(client) {
+	opts.SetOnConnectHandler(func(client MQTT.Client) {
 		log.Print("Connected to mqtt broker")
 	})
-	opts.SetConnectionLostHandler(func(client, reason) {
+	opts.SetConnectionLostHandler(func(client MQTT.Client, reason error) {
 		log.Printf("Connection lost to mqtt broker: %s", reason)
 	})
 
