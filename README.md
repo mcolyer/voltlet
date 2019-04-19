@@ -12,6 +12,7 @@ It lets you control [Etekcity Voltson] smart plugs via your local server rather 
 * Run it: `./voltlet -mqtt-broker $MQTT_BROKER -mqtt-user $MQTT_USER -mqtt-password $MQTT_PASSWORD`
 * Restart your plugs so that they connect to the local server.
 
+
 #### MQTT
 
 * Send "true" to turn on the plug to `/voltson/{plug-uuid}`
@@ -44,3 +45,4 @@ It lets you control [Etekcity Voltson] smart plugs via your local server rather 
 
 
 [Etekcity Voltson]: https://www.amazon.com/gp/product/B06XSTJST6/ref=as_li_tl?ie=UTF8&camp=1789&creative=9325&creativeASIN=B06XSTJST6&linkCode=as2&tag=matcol01-20&linkId=ab8750e61f7f9723ddaa60cb56d0df82
+
