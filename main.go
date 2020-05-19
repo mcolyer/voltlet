@@ -202,12 +202,17 @@ outer:
 					if len(powers) == 2 {
 						if instant, err := strconv.ParseUint(powers[0], 16, 64); err == nil {
 							if avg30s, err := strconv.ParseUint(powers[1], 16, 64); err == nil {
-								msg, _ := json.Marshal(InstantEnergyMessage{
-									Instant: float64(instant) / 4096,
-									Avg30s: float64(avg30s) / 4096,
-								})
-								messages <- message{o.InstantEnergyTopic(), string(msg)}
-								log.Printf("[%s] report: %s", o.id, msg)
+								// this is a 15 amp rated device, give ourselves a bunch of headroom, even on 240v
+								if instant > 4000 or avg30s > 4000 {
+									log.Printf("[%s] skipping power report, value(s) out of range: instant %dw, avg30s %dw", o.id, msg)
+								} else {
+									msg, _ := json.Marshal(InstantEnergyMessage{
+										Instant: float64(instant) / 4096,
+										Avg30s: float64(avg30s) / 4096,
+									})
+									messages <- message{o.InstantEnergyTopic(), string(msg)}
+									log.Printf("[%s] report: %s", o.id, msg)
+								}
 							}
 						}
 					}
