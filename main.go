@@ -203,7 +203,7 @@ outer:
 						if instant, err := strconv.ParseUint(powers[0], 16, 64); err == nil {
 							if avg30s, err := strconv.ParseUint(powers[1], 16, 64); err == nil {
 								// this is a 15 amp rated device, give ourselves a bunch of headroom, even on 240v
-								if instant > 4000 || avg30s > 4000 {
+								if instant > 4000*4096 || avg30s > 4000*4096 {
 									log.Printf("[%s] skipping power report, value(s) out of range: instant %dw, avg30s %dw", o.id, instant, avg30s)
 								} else {
 									msg, _ := json.Marshal(InstantEnergyMessage{
