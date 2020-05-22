@@ -23,7 +23,7 @@ type outlet struct {
 }
 
 func (o outlet) CommandTopic() string {
-	return "/voltson/" + o.id
+	return "voltson/" + o.id
 }
 
 func (o outlet) AvailableTopic() string {
