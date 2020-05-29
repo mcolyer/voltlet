@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"strconv"
+	"strings"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
@@ -34,6 +36,14 @@ func (o outlet) StateTopic() string {
 	return o.CommandTopic() + "/state"
 }
 
+func (o outlet) EnergyTopic() string {
+	return o.CommandTopic() + "/energy"
+}
+
+func (o outlet) InstantEnergyTopic() string {
+	return o.CommandTopic() + "/instantenergy"
+}
+
 var subscribes = make(chan outlet)
 var unsubscribes = make(chan outlet)
 
@@ -45,6 +55,16 @@ type message struct {
 type RelayMessage struct {
 	Uri    string `json:"uri"`
 	Action string `json:"action"`
+}
+
+type EnergyMessage struct {
+	Seconds int `json:"seconds"`
+	Watts 	float64 `json:"watts"`
+}
+
+type InstantEnergyMessage struct {
+	Instant float64 `json:"instant"`
+	Avg30s 	float64 `json:"avg30s"`
 }
 
 type LoginReplyMessage struct {
@@ -68,6 +88,13 @@ type logWriter struct {
 
 func (writer logWriter) Write(bytes []byte) (int, error) {
 	return fmt.Print(time.Now().UTC().Format("15:04:05.999Z") + " " + string(bytes))
+}
+
+func ParsePower(power string) (uint64, uint64, error) {
+	powers := strings.Split(power, ":")
+	instant, e := strconv.ParseUint(powers[0], 16, 64)
+	avg30s, e := strconv.ParseUint(powers[1], 16, 64)
+	return instant, avg30s, e
 }
 
 func websocketRequest(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +142,7 @@ outer:
 		case <-ticker.C:
 			log.Printf("[%s] ping", o.id)
 			if !pendingCommand {
-				err := c.WriteMessage(websocket.TextMessage, []byte("{\"uri\":\"/ka\"}"))
+				err := c.WriteMessage(websocket.TextMessage, []byte("{\"uri\":\"/getRuntime\"}"))
 				if err != nil {
 					log.Println("ping err:", err)
 				}
@@ -163,19 +190,51 @@ outer:
 				log.Printf("[%s] send: %s", o.id, msg)
 				err = c.WriteMessage(websocket.TextMessage, msg)
 			}
-
 			if m["uri"] == "/runtimeInfo" {
 				if m["relay"] == "open" {
 					messages <- message{o.StateTopic(), "true"}
 				} else {
 					messages <- message{o.StateTopic(), "false"}
 				}
+
+				if m["power"] != nil {
+					powers := strings.Split(m["power"].(string), ":")
+					if len(powers) == 2 {
+						if instant, err := strconv.ParseUint(powers[0], 16, 64); err == nil {
+							if avg30s, err := strconv.ParseUint(powers[1], 16, 64); err == nil {
+								// this is a 15 amp rated device, give ourselves a bunch of headroom, even on 240v
+								if instant > 4000*4096 || avg30s > 4000*4096 {
+									log.Printf("[%s] skipping power report, value(s) out of range: instant %dw, avg30s %dw", o.id, instant, avg30s)
+								} else {
+									msg, _ := json.Marshal(InstantEnergyMessage{
+										Instant: float64(instant) / 4096,
+										Avg30s: float64(avg30s) / 4096,
+									})
+									messages <- message{o.InstantEnergyTopic(), string(msg)}
+									log.Printf("[%s] report: %s", o.id, msg)
+								}
+							}
+						}
+					}
+				}
+
 			}
 			if m["uri"] == "/state" {
 				if m["relay"] == "open" {
 					messages <- message{o.StateTopic(), "true"}
 				} else {
 					messages <- message{o.StateTopic(), "false"}
+				}
+			}
+			if m["uri"] == "/report" && m["e"] != nil && m["t"] != nil {
+				if energy, err := strconv.ParseUint(m["e"].(string), 16, 64); err == nil {
+					secs, _ := strconv.ParseInt(m["t"].(string), 16, 64)
+					msg, _ := json.Marshal(EnergyMessage{
+						Seconds: int(secs),
+						Watts: float64(energy) / 4096,
+					})
+					messages <- message{o.EnergyTopic(), string(msg)}
+					log.Printf("[%s] report: %s", o.id, msg)
 				}
 			}
 		case command := <-mqtt:
